@@ -97,4 +97,74 @@ public class DatabaseManager {
         }
         return null;
     }
+    public static int getAccountCount() {
+        String countSql = "SELECT COUNT(*) AS total FROM accounts";
+        try (Connection conn = connect();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(countSql)) {
+            if (rs.next()) {
+                return rs.getInt("total");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error counting accounts: " + e.getMessage());
+        }
+        return 0;
+    }
+
+    public static void updateAccountBalance(String accountNumber, double newBalance) {
+        String updateSql = "UPDATE accounts SET balance = ? WHERE account_number = ?";
+        try (Connection conn = connect(); PreparedStatement pstmt = conn.prepareStatement(updateSql)) {
+            pstmt.setDouble(1, newBalance);
+            pstmt.setString(2, accountNumber);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Error updating account balance: " + e.getMessage());
+        }
+    }
+
+    public static void deleteAccount(String accountNumber) {
+        String deleteTxSql = "DELETE FROM transactions WHERE account_number = ?";
+        String deleteAccSql = "DELETE FROM accounts WHERE account_number = ?";
+        try (Connection conn = connect()) {
+            try (PreparedStatement txStmt = conn.prepareStatement(deleteTxSql)) {
+                txStmt.setString(1, accountNumber);
+                txStmt.executeUpdate();
+            }
+            try (PreparedStatement accStmt = conn.prepareStatement(deleteAccSql)) {
+                accStmt.setString(1, accountNumber);
+                accStmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            System.err.println("Error deleting account: " + e.getMessage());
+        }
+    }
+
+    public static void seedSampleRecords() {
+        initializeDatabase();
+        String[][] sampleAccounts = {
+            {"SAV-001", "SavingsAccount", "Main Branch", "Yash Joshi", "1200.00"},
+            {"INV-001", "InvestmentAccount", "Main Branch", "Yash Joshi", "2500.00"},
+            {"CHQ-001", "ChequeAccount", "Main Branch", "Yash Joshi", "1800.00"},
+            {"SAV-002", "SavingsAccount", "Gaborone CBD", "Oliver Bennett", "950.00"},
+            {"INV-002", "InvestmentAccount", "Gaborone CBD", "Oliver Bennett", "3200.00"},
+            {"CHQ-002", "ChequeAccount", "Gaborone CBD", "Oliver Bennett", "1500.00"},
+            {"SAV-003", "SavingsAccount", "Riverwalk Branch", "Hannah Brooks", "600.00"},
+            {"INV-003", "InvestmentAccount", "Riverwalk Branch", "Hannah Brooks", "1400.00"},
+            {"CHQ-003", "ChequeAccount", "Riverwalk Branch", "Liam Carter", "2100.00"},
+            {"SAV-004", "SavingsAccount", "Main Branch", "Liam Carter", "800.00"}
+        };
+
+        for (String[] row : sampleAccounts) {
+            String accNum = row[0];
+            String accType = row[1];
+            String branch = row[2];
+            String holder = row[3];
+            double bal = Double.parseDouble(row[4]);
+
+            if (loadAccountBalance(accNum) == null) {
+                saveAccountBalance(accNum, accType, branch, holder, bal);
+                recordTransaction(accNum, "INITIAL_SEED", bal, bal);
+            }
+        }
+    }
 }
