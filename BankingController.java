@@ -23,6 +23,28 @@ public class BankingController {
         customer.addAccount(savingsAccount);
         customer.addAccount(investmentAccount);
         customer.addAccount(chequeAccount);
+
+        DatabaseManager.initializeDatabase();
+        loadSavedBalances();
+    }
+
+    private void loadSavedBalances() {
+        syncAccountBalanceFromDb(savingsAccount);
+        syncAccountBalanceFromDb(investmentAccount);
+        syncAccountBalanceFromDb(chequeAccount);
+    }
+
+    private void syncAccountBalanceFromDb(Account account) {
+        Double savedBalance = DatabaseManager.loadAccountBalance(account.getAccountNumber());
+        if (savedBalance != null) {
+            double currentBalance = account.getBalance();
+            double delta = savedBalance - currentBalance;
+            if (delta > 0) {
+                account.deposit(delta);
+            } else if (delta < 0) {
+                account.withdraw(Math.abs(delta));
+            }
+        }
     }
 
     public void showLogin() {
@@ -49,7 +71,9 @@ public class BankingController {
         if (amount == null) {
             return;
         }
-        getSelectedAccount().deposit(amount);
+        Account selected = getSelectedAccount();
+        selected.deposit(amount);
+        persistAccountState(selected, "DEPOSIT", amount);
         refreshBalanceLabel();
         accountView.setStatusText("Deposited BWP " + amount + " into " + accountView.getSelectedAccountType() + ".");
     }
@@ -59,29 +83,53 @@ public class BankingController {
         if (amount == null) {
             return;
         }
-        boolean allowed = getSelectedAccount().withdraw(amount);
-        refreshBalanceLabel();
+        Account selected = getSelectedAccount();
+        boolean allowed = selected.withdraw(amount);
         if (allowed) {
+            persistAccountState(selected, "WITHDRAW", amount);
+            refreshBalanceLabel();
             accountView.setStatusText("Withdrew BWP " + amount + " from " + accountView.getSelectedAccountType() + ".");
         } else {
+            refreshBalanceLabel();
             accountView.setStatusText("Withdrawal declined for " + accountView.getSelectedAccountType() + " (check account rules/balance).");
         }
     }
 
     private void handleCalculateInterest() {
-    Account selectedAccount = getSelectedAccount();
-    if (selectedAccount instanceof SavingsAccount) {
-        ((SavingsAccount) selectedAccount).calculateInterest();
-        refreshBalanceLabel();
-        accountView.setStatusText("Interest applied to SavingsAccount.");
-    } else if (selectedAccount instanceof InvestmentAccount) {
-        ((InvestmentAccount) selectedAccount).calculateInterest();
-        refreshBalanceLabel();
-        accountView.setStatusText("Interest applied to InvestmentAccount.");
-    } else {
-        accountView.setStatusText("ChequeAccount does not earn interest.");
+        Account selectedAccount = getSelectedAccount();
+        if (selectedAccount instanceof SavingsAccount) {
+            double before = selectedAccount.getBalance();
+            ((SavingsAccount) selectedAccount).calculateInterest();
+            double diff = Math.max(0.0, selectedAccount.getBalance() - before);
+            persistAccountState(selectedAccount, "INTEREST", diff);
+            refreshBalanceLabel();
+            accountView.setStatusText("Interest applied to SavingsAccount.");
+        } else if (selectedAccount instanceof InvestmentAccount) {
+            double before = selectedAccount.getBalance();
+            ((InvestmentAccount) selectedAccount).calculateInterest();
+            double diff = Math.max(0.0, selectedAccount.getBalance() - before);
+            persistAccountState(selectedAccount, "INTEREST", diff);
+            refreshBalanceLabel();
+            accountView.setStatusText("Interest applied to InvestmentAccount.");
+        } else {
+            accountView.setStatusText("ChequeAccount does not earn interest.");
+        }
     }
-}
+
+    private void persistAccountState(Account account, String txType, double amount) {
+        String typeName = account.getClass().getSimpleName();
+        DatabaseManager.saveAccountBalance(
+                account.getAccountNumber(),
+                typeName,
+                account.branch,
+                customer.toString(),
+                account.getBalance());
+        DatabaseManager.recordTransaction(
+                account.getAccountNumber(),
+                txType,
+                amount,
+                account.getBalance());
+    }
 
     private Account getSelectedAccount() {
         String selected = accountView.getSelectedAccountType();
